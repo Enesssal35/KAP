@@ -373,8 +373,64 @@ function persistReport(id, record){
   }
 }
 
+const DEMO_REPORTS = [
+  {
+    id: "r_demo_brsan",
+    ticker: "BRSAN",
+    reportType: "Finansal Rapor",
+    period: "2026 2Ç",
+    addedAt: new Date(Date.now() - 3600000).toISOString(),
+    sinyal: "olumlu",
+    ozet: "Borusan Boru 2026 2. çeyrek finansal sonuçlarında net kârını geçen yılın aynı dönemine göre %34 artırarak 1.42 milyar TL seviyesine çıkardı. ABD tesislerindeki yüksek kapasite kullanımı ve güçlü ihracat ciroyu destekledi.",
+    olumlu_yonler: [
+      "Net kârda yıllık %34 artış kaydedildi.",
+      "İhracat gelirlerinin toplam cirodaki payı %68'e yükseldi.",
+      "Esas faaliyet kâr marjı 215 baz puan iyileşti."
+    ],
+    olumsuz_yonler: [
+      "Net borç pozisyonunda hafif yükseliş görüldü.",
+      "Hammadde çelik fiyatlarındaki dalgalanma marjlar üzerinde baskı oluşturabilir."
+    ],
+    onemli_metrikler: [
+      { ad: "Net Kâr", deger: "1.42 Milyar TL", yorum: "Yıllık %34 artış" },
+      { ad: "FAVÖK Marjı", deger: "%16.4", yorum: "Güçlü operasyonel performans" },
+      { ad: "İhracat Oranı", deger: "%68", yorum: "Döviz geliri avantajı" }
+    ],
+    ongoru: "ABD ve Avrupa pazarlarındaki altyapı yatırımlarının şirketin boru siparişlerini önümüzdeki çeyreklerde desteklemeye devam etmesi bekleniyor.",
+    yatirim_notu: "Şirketin ihracat odaklı yapısı ve yüksek FAVÖK marjı değer yatırımcısı açısından olumlu. Borçluluk oranı yakından takip edilmeli."
+  },
+  {
+    id: "r_demo_egeen",
+    ticker: "EGEEN",
+    reportType: "Faaliyet Raporu",
+    period: "2026 2Ç",
+    addedAt: new Date(Date.now() - 7200000).toISOString(),
+    sinyal: "karisik",
+    ozet: "Ege Endüstri dingil ve aks üretiminde küresel tedarik zincirindeki yavaşlamaya rağmen cirosunu korumayı başardı. Yeni fabrika yatırımlarında tamamlanma oranı %85'e ulaştı.",
+    olumlu_yonler: [
+      "Yeni fabrika yatırımı takvime uygun ilerliyor.",
+      "Özsermaye kârlılığı %28 seviyesini korudu."
+    ],
+    olumsuz_yonler: [
+      "Avrupa ticari araç pazarındaki durgunluk sipariş hacmini sınırladı.",
+      "Yatırım harcamaları sebebiyle serbest nakit akışı geçici olarak daraldı."
+    ],
+    onemli_metrikler: [
+      { ad: "Ciro", deger: "2.85 Milyar TL", yorum: "Yıllık %12 büyüme" },
+      { ad: "Yatırım Tamamlanma", deger: "%85", yorum: "Kapasite artışı yakın" }
+    ],
+    ongoru: "Yeni fabrikanın seri üretime geçmesiyle 2026 4. çeyrek itibarıyla üretim kapasitesinin %40 artması hedefleniyor.",
+    yatirim_notu: "Uzun vadeli büyüme hikayesi güçlü ancak kısa vadede Avrupa pazarındaki talep kısıtları ciro hızını baskılayabilir."
+  }
+];
+
 async function loadAll(){
-  const idx = loadIndex();
+  let idx = loadIndex();
+  if(!idx || idx.length === 0){
+    // İlk açılışta demo verilerini yerleştir
+    DEMO_REPORTS.forEach(r => persistReport(r.id, r));
+    idx = loadIndex();
+  }
   const loaded = idx.map(loadReportById);
   reports = loaded.filter(Boolean).sort((a,b)=> new Date(b.addedAt) - new Date(a.addedAt));
   renderSidebar();
@@ -384,18 +440,34 @@ async function loadAll(){
 /* ---------------- sidebar ---------------- */
 function renderSidebar(){
   const counts = {};
-  reports.forEach(r=>{ counts[r.ticker] = (counts[r.ticker]||0) + 1; });
-  const knownTickers = Array.from(new Set([...PORTFOLIO, ...Object.keys(counts)]));
-
-  let html = `<li><button class="ticker-btn ${activeTicker==='TÜMÜ'?'active':''}" data-t="TÜMÜ">
-    <span>Tümü</span><span class="ticker-count">${reports.length}</span></button></li>`;
-  knownTickers.forEach(t=>{
-    html += `<li><button class="ticker-btn ${activeTicker===t?'active':''}" data-t="${t}">
-      <span>${t}</span><span class="ticker-count">${counts[t]||0}</span></button></li>`;
+  reports.forEach(r=>{ 
+    const t = (r.ticker || '').trim().toUpperCase();
+    if(t) counts[t] = (counts[t]||0) + 1;
   });
+
+  const knownTickers = Array.from(new Set([...PORTFOLIO, ...Object.keys(counts)]));
+  const currentActive = (activeTicker || 'TÜMÜ').trim().toUpperCase();
+
+  let html = `<li><button class="ticker-btn ${currentActive==='TÜMÜ'?'active':''}" data-t="TÜMÜ">
+    <span>Tümü</span><span class="ticker-count">${reports.length}</span></button></li>`;
+  
+  knownTickers.forEach(t=>{
+    const upperT = t.trim().toUpperCase();
+    html += `<li><button class="ticker-btn ${currentActive===upperT?'active':''}" data-t="${upperT}">
+      <span>${upperT}</span><span class="ticker-count">${counts[upperT]||0}</span></button></li>`;
+  });
+  
   el('tickerList').innerHTML = html;
   el('tickerList').querySelectorAll('.ticker-btn').forEach(b=>{
-    b.addEventListener('click', ()=>{ activeTicker = b.dataset.t; renderSidebar(); renderList(); });
+    b.addEventListener('click', ()=>{ 
+      activeTicker = (b.dataset.t || 'TÜMÜ').trim().toUpperCase(); 
+      // Sol menüden tıklanınca filtreleri sıfırla ki sonuçlar hemen görünsün
+      el('filterType').value = '';
+      el('filterSignal').value = '';
+      el('searchInput').value = '';
+      renderSidebar(); 
+      renderList(); 
+    });
   });
 
   // datalist for add form
@@ -407,12 +479,15 @@ function getFiltered(){
   const type = el('filterType').value;
   const signal = el('filterSignal').value;
   const q = el('searchInput').value.trim().toLowerCase();
+  const activeUpper = (activeTicker || 'TÜMÜ').trim().toUpperCase();
+
   return reports.filter(r=>{
-    if(activeTicker !== 'TÜMÜ' && r.ticker !== activeTicker) return false;
+    const rTicker = (r.ticker || '').trim().toUpperCase();
+    if(activeUpper !== 'TÜMÜ' && rTicker !== activeUpper) return false;
     if(type && r.reportType !== type) return false;
     if(signal && r.sinyal !== signal) return false;
     if(q){
-      const hay = (r.ticker+' '+r.ozet+' '+r.yatirim_notu+' '+r.ongoru).toLowerCase();
+      const hay = (rTicker+' '+(r.ozet||'')+' '+(r.yatirim_notu||'')+' '+(r.ongoru||'')).toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -454,7 +529,7 @@ function fmtDate(iso){
 }
 
 function escapeHtml(s){
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&txt;'}[c]));
 }
 
 function renderList(){
