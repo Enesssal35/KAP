@@ -719,7 +719,7 @@ function showAddError(msg){ el('addError').textContent = msg; el('addError').cla
 const API_KEY_STORAGE = 'kap_gemini_api_key';
 
 function getApiKey(){
-  try{ return localStorage.getItem(API_KEY_STORAGE) || 'AQ.Ab8RN6LD5oq9JjMWuvtUPTO0jRIGTVAex6ORuMJny4Nnu6qryQ'; }catch(e){ return 'AQ.Ab8RN6LD5oq9JjMWuvtUPTO0jRIGTVAex6ORuMJny4Nnu6qryQ'; }
+  try{ return localStorage.getItem(API_KEY_STORAGE) || 'AQ.Ab8RN6Klit7vgg6XFPqNLm--Mpvgbe5H-bz1_zygGgGaXQja5A'; }catch(e){ return 'AQ.Ab8RN6Klit7vgg6XFPqNLm--Mpvgbe5H-bz1_zygGgGaXQja5A'; }
 }
 function setApiKey(key){
   try{ localStorage.setItem(API_KEY_STORAGE, key); }catch(e){}
@@ -874,9 +874,11 @@ el('analyzeBtn').addEventListener('click', async ()=>{
   let response = null;
   try{
     const candidateModels = [
-      "models/gemini-1.5-flash",
-      "models/gemini-2.0-flash-exp",
-      "models/gemini-1.5-pro"
+      "models/gemini-flash-latest",
+      "models/gemini-3.5-flash",
+      "models/gemini-pro-latest",
+      "models/gemini-2.5-flash",
+      "models/gemini-2.5-flash-lite"
     ];
 
     let lastErrorDetail = "";
