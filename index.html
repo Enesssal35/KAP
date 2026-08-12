@@ -644,7 +644,7 @@ function showAddError(msg){ el('addError').textContent = msg; el('addError').cla
 const API_KEY_STORAGE = 'kap_gemini_api_key';
 
 function getApiKey(){
-  try{ return localStorage.getItem(API_KEY_STORAGE) || 'AQ.Ab8RN6LtLWsfklsOmj8fao7btpAWXlB5jeFz9ISWsAPLA8El2A'; }catch(e){ return 'AQ.Ab8RN6LtLWsfklsOmj8fao7btpAWXlB5jeFz9ISWsAPLA8El2A'; }
+  try{ return localStorage.getItem(API_KEY_STORAGE) || 'AQ.Ab8RN6LD5oq9JjMWuvtUPTO0jRIGTVAex6ORuMJny4Nnu6qryQ'; }catch(e){ return 'AQ.Ab8RN6LD5oq9JjMWuvtUPTO0jRIGTVAex6ORuMJny4Nnu6qryQ'; }
 }
 function setApiKey(key){
   try{ localStorage.setItem(API_KEY_STORAGE, key); }catch(e){}
@@ -801,9 +801,16 @@ el('analyzeBtn').addEventListener('click', async ()=>{
     // Hesabınızda aktif olan modelleri sorguluyoruz
     let detectedModels = [];
     try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-        headers: { "x-goog-api-key": apiKey }
-      });
+      let listUrl = `https://generativelanguage.googleapis.com/v1beta/models`;
+      const listHeaders = {};
+      if (apiKey.startsWith('AQ.')) {
+        listHeaders["Authorization"] = `Bearer ${apiKey}`;
+        listHeaders["x-goog-api-key"] = apiKey;
+      } else {
+        listUrl += `?key=${apiKey}`;
+        listHeaders["x-goog-api-key"] = apiKey;
+      }
+      const listRes = await fetch(listUrl, { headers: listHeaders });
       if (listRes.ok) {
         const listData = await listRes.json();
         if (listData.models && Array.isArray(listData.models)) {
@@ -828,15 +835,21 @@ el('analyzeBtn').addEventListener('click', async ()=>{
 
     for (const mPath of candidateModels) {
       const cleanPath = mPath.startsWith("models/") ? mPath : "models/" + mPath;
-      const API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent?key=${apiKey}`;
+      let API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent`;
+      const reqHeaders = { "Content-Type": "application/json" };
+
+      if (apiKey.startsWith('AQ.')) {
+        reqHeaders["Authorization"] = `Bearer ${apiKey}`;
+        reqHeaders["x-goog-api-key"] = apiKey;
+      } else {
+        API_URL += `?key=${apiKey}`;
+        reqHeaders["x-goog-api-key"] = apiKey;
+      }
       
       try {
         const res = await fetch(API_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey
-          },
+          headers: reqHeaders,
           body: JSON.stringify({
             contents: [{
               parts: [
