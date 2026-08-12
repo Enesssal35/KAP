@@ -874,13 +874,13 @@ el('analyzeBtn').addEventListener('click', async ()=>{
   let response = null;
   try{
     const candidateModels = [
-      "models/gemini-2.0-flash",
       "models/gemini-1.5-flash",
-      "models/gemini-1.5-pro",
-      "models/gemini-2.5-flash"
+      "models/gemini-2.0-flash-exp",
+      "models/gemini-1.5-pro"
     ];
 
     let lastErrorDetail = "";
+    let rateLimited = false;
 
     for (const mPath of candidateModels) {
       const cleanPath = mPath.startsWith("models/") ? mPath : "models/" + mPath;
@@ -894,7 +894,13 @@ el('analyzeBtn').addEventListener('click', async ()=>{
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.2
-        }
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
       });
 
       // 1. Yöntem: x-goog-api-key Header ile deneme (Yeni AQ. formatlı anahtarlar için)
@@ -913,12 +919,20 @@ el('analyzeBtn').addEventListener('click', async ()=>{
           response = res;
           break;
         } else {
-          try {
-            const errBody = await res.json();
-            lastErrorDetail = errBody?.error?.message || res.status;
-          } catch(e) { lastErrorDetail = res.status; }
+          const errBody = await res.json().catch(()=>({}));
+          const errMsg = errBody?.error?.message || `HTTP ${res.status}`;
+          if (res.status === 429 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate")) {
+            rateLimited = true;
+            lastErrorDetail = "Google API yoğunluk kısıtlamasına takıldı (Ücretsiz kotada çok hızlı istek yapıldı). Lütfen 20-30 saniye bekleyip tekrar 'Analiz Et' butonuna basın.";
+            break;
+          }
+          if (!lastErrorDetail || res.status !== 404) {
+            lastErrorDetail = errMsg;
+          }
         }
       } catch(e) { lastErrorDetail = e.message; }
+
+      if (response) break;
 
       // 2. Yöntem: URL ?key= parametresi ile deneme (Klasik anahtarlar için)
       try {
@@ -935,12 +949,20 @@ el('analyzeBtn').addEventListener('click', async ()=>{
           response = res;
           break;
         } else {
-          try {
-            const errBody = await res.json();
-            lastErrorDetail = errBody?.error?.message || res.status;
-          } catch(e) { lastErrorDetail = res.status; }
+          const errBody = await res.json().catch(()=>({}));
+          const errMsg = errBody?.error?.message || `HTTP ${res.status}`;
+          if (res.status === 429 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate")) {
+            rateLimited = true;
+            lastErrorDetail = "Google API yoğunluk kısıtlamasına takıldı (Ücretsiz kotada çok hızlı istek yapıldı). Lütfen 20-30 saniye bekleyip tekrar 'Analiz Et' butonuna basın.";
+            break;
+          }
+          if (!lastErrorDetail || res.status !== 404) {
+            lastErrorDetail = errMsg;
+          }
         }
       } catch(e) { lastErrorDetail = e.message; }
+
+      if (response || rateLimited) break;
     }
 
     if (!response) {
