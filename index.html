@@ -801,15 +801,8 @@ el('analyzeBtn').addEventListener('click', async ()=>{
     // Hesabınızda aktif olan modelleri sorguluyoruz
     let detectedModels = [];
     try {
-      let listUrl = `https://generativelanguage.googleapis.com/v1beta/models`;
-      const listHeaders = {};
-      if (apiKey.startsWith('AQ.')) {
-        listHeaders["Authorization"] = `Bearer ${apiKey}`;
-        listHeaders["x-goog-api-key"] = apiKey;
-      } else {
-        listUrl += `?key=${apiKey}`;
-        listHeaders["x-goog-api-key"] = apiKey;
-      }
+      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+      const listHeaders = { "x-goog-api-key": apiKey };
       const listRes = await fetch(listUrl, { headers: listHeaders });
       if (listRes.ok) {
         const listData = await listRes.json();
@@ -835,16 +828,11 @@ el('analyzeBtn').addEventListener('click', async ()=>{
 
     for (const mPath of candidateModels) {
       const cleanPath = mPath.startsWith("models/") ? mPath : "models/" + mPath;
-      let API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent`;
-      const reqHeaders = { "Content-Type": "application/json" };
-
-      if (apiKey.startsWith('AQ.')) {
-        reqHeaders["Authorization"] = `Bearer ${apiKey}`;
-        reqHeaders["x-goog-api-key"] = apiKey;
-      } else {
-        API_URL += `?key=${apiKey}`;
-        reqHeaders["x-goog-api-key"] = apiKey;
-      }
+      const API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent?key=${apiKey}`;
+      const reqHeaders = { 
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
+      };
       
       try {
         const res = await fetch(API_URL, {
