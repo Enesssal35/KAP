@@ -873,75 +873,74 @@ el('analyzeBtn').addEventListener('click', async ()=>{
 
   let response = null;
   try{
-    // Hesabınızda aktif olan modelleri sorguluyoruz
-    let detectedModels = [];
-    try {
-      let listUrl = `https://generativelanguage.googleapis.com/v1beta/models`;
-      if (!apiKey.startsWith('AQ.')) listUrl += `?key=${apiKey}`;
-      const listHeaders = { "x-goog-api-key": apiKey };
-      const listRes = await fetch(listUrl, { headers: listHeaders });
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        if (listData.models && Array.isArray(listData.models)) {
-          detectedModels = listData.models
-            .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"))
-            .map(m => m.name);
-        }
-      }
-    } catch(e) { console.warn("Model listesi sorgulanamadı", e); }
-
-    // Çeşitli model adaylarını sırayla deniyoruz
-    const candidateModels = Array.from(new Set([
-      ...detectedModels,
-      "models/gemini-3.5-flash",
-      "models/gemini-3.5-pro",
-      "models/gemini-1.5-flash-002",
-      "models/gemini-1.5-pro-002",
-      "models/gemini-2.0-flash-exp"
-    ]));
+    const candidateModels = [
+      "models/gemini-2.0-flash",
+      "models/gemini-1.5-flash",
+      "models/gemini-1.5-pro",
+      "models/gemini-2.5-flash"
+    ];
 
     let lastErrorDetail = "";
 
     for (const mPath of candidateModels) {
       const cleanPath = mPath.startsWith("models/") ? mPath : "models/" + mPath;
-      let API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent`;
-      if (!apiKey.startsWith('AQ.')) API_URL += `?key=${apiKey}`;
-      const reqHeaders = { 
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      };
-      
+      const requestPayload = JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: "application/pdf", data: base64 } },
+            { text: `${SYSTEM_PROMPT}\n\n--- BİLDİRİM BİLGİLERİ ---\n${instructionText}` }
+          ]
+        }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2
+        }
+      });
+
+      // 1. Yöntem: x-goog-api-key Header ile deneme (Yeni AQ. formatlı anahtarlar için)
       try {
-        const res = await fetch(API_URL, {
+        const urlHeader = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent`;
+        const res = await fetch(urlHeader, {
           method: "POST",
-          headers: reqHeaders,
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { inlineData: { mimeType: "application/pdf", data: base64 } },
-                { text: `${SYSTEM_PROMPT}\n\n--- BİLDİRİM BİLGİLERİ ---\n${instructionText}` }
-              ]
-            }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.2
-            }
-          })
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: requestPayload
         });
 
         if (res.ok) {
           response = res;
-          break; // Başarılı çalışan model bulundu!
+          break;
         } else {
           try {
             const errBody = await res.json();
             lastErrorDetail = errBody?.error?.message || res.status;
           } catch(e) { lastErrorDetail = res.status; }
-          console.warn(`Model ${cleanPath} hata verdi (${lastErrorDetail}), bir sonraki deneniyor...`);
         }
-      } catch(fetchErr) {
-        lastErrorDetail = fetchErr.message;
-      }
+      } catch(e) { lastErrorDetail = e.message; }
+
+      // 2. Yöntem: URL ?key= parametresi ile deneme (Klasik anahtarlar için)
+      try {
+        const urlQuery = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent?key=${apiKey}`;
+        const res = await fetch(urlQuery, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: requestPayload
+        });
+
+        if (res.ok) {
+          response = res;
+          break;
+        } else {
+          try {
+            const errBody = await res.json();
+            lastErrorDetail = errBody?.error?.message || res.status;
+          } catch(e) { lastErrorDetail = res.status; }
+        }
+      } catch(e) { lastErrorDetail = e.message; }
     }
 
     if (!response) {
