@@ -529,7 +529,7 @@ function fmtDate(iso){
 }
 
 function escapeHtml(s){
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&txt;'}[c]));
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function renderList(){
@@ -876,7 +876,8 @@ el('analyzeBtn').addEventListener('click', async ()=>{
     // Hesabınızda aktif olan modelleri sorguluyoruz
     let detectedModels = [];
     try {
-      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+      let listUrl = `https://generativelanguage.googleapis.com/v1beta/models`;
+      if (!apiKey.startsWith('AQ.')) listUrl += `?key=${apiKey}`;
       const listHeaders = { "x-goog-api-key": apiKey };
       const listRes = await fetch(listUrl, { headers: listHeaders });
       if (listRes.ok) {
@@ -903,7 +904,8 @@ el('analyzeBtn').addEventListener('click', async ()=>{
 
     for (const mPath of candidateModels) {
       const cleanPath = mPath.startsWith("models/") ? mPath : "models/" + mPath;
-      const API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent?key=${apiKey}`;
+      let API_URL = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent`;
+      if (!apiKey.startsWith('AQ.')) API_URL += `?key=${apiKey}`;
       const reqHeaders = { 
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey
