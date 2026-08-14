@@ -252,10 +252,10 @@
   <div class="api-key-panel-inner">
     <div class="field">
       <label for="apiKeyInput">Gemini API Anahtarı (Ücretsiz)</label>
-      <input type="password" id="apiKeyInput" placeholder="AIzaSy...">
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
       <div class="pdf-status">
         Anahtarınız sadece bu tarayıcıda (localStorage) saklanır, hiçbir sunucuya gönderilmez.
-        Ücretsiz anahtarı <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--gold);">Google AI Studio</a> adresinden "Create API Key" butonuna basarak saniyeler içinde alabilirsiniz.
+        Anahtarı <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style="color:var(--gold);">console.anthropic.com</a> adresinden "Create Key" butonuna basarak alabilirsiniz. (<strong style="color:var(--gold);">sk-ant-...</strong> ile başlar)
       </div>
     </div>
     <div class="add-actions" style="margin-top:10px;">
@@ -716,10 +716,10 @@ function clearAddError(){ el('addError').textContent=''; el('addError').classLis
 function showAddError(msg){ el('addError').textContent = msg; el('addError').classList.add('show'); }
 
 /* ---------------- API key management ---------------- */
-const API_KEY_STORAGE = 'kap_gemini_api_key';
+const API_KEY_STORAGE = 'kap_claude_api_key';
 
 function getApiKey(){
-  try{ return localStorage.getItem(API_KEY_STORAGE) || 'AQ.Ab8RN6Klit7vgg6XFPqNLm--Mpvgbe5H-bz1_zygGgGaXQja5A'; }catch(e){ return 'AQ.Ab8RN6Klit7vgg6XFPqNLm--Mpvgbe5H-bz1_zygGgGaXQja5A'; }
+  try{ return localStorage.getItem(API_KEY_STORAGE) || ''; }catch(e){ return ''; }
 }
 function setApiKey(key){
   try{ localStorage.setItem(API_KEY_STORAGE, key); }catch(e){}
@@ -830,7 +830,13 @@ el('analyzeBtn').addEventListener('click', async ()=>{
   
   const apiKey = getApiKey();
   if(!apiKey){
-    showAddError('Önce sağ üstten "API Anahtarı" ile kendi Gemini anahtarınızı girin.');
+    showAddError('Önce sağ üstten "API Anahtarı" ile Claude API anahtarınızı girin (sk-ant-... ile başlar).');
+    openApiKeyPanel();
+    return;
+  }
+
+  if(!apiKey.startsWith('sk-ant-')){
+    showAddError('Geçersiz anahtar formatı. Claude anahtarı "sk-ant-" ile başlamalı. Sağ üstten güncelleyin.');
     openApiKeyPanel();
     return;
   }
@@ -871,149 +877,77 @@ el('analyzeBtn').addEventListener('click', async ()=>{
     return;
   }
 
-  let response = null;
+  let rawText = '';
   try{
-    const candidateModels = [
-      "models/gemini-flash-latest",
-      "models/gemini-3.5-flash",
-      "models/gemini-pro-latest",
-      "models/gemini-2.5-flash",
-      "models/gemini-2.5-flash-lite"
-    ];
-
-    let lastErrorDetail = "";
-    let rateLimited = false;
-
-    for (const mPath of candidateModels) {
-      const cleanPath = mPath.startsWith("models/") ? mPath : "models/" + mPath;
-      const requestPayload = JSON.stringify({
-        contents: [{
-          parts: [
-            { inlineData: { mimeType: "application/pdf", data: base64 } },
-            { text: `${SYSTEM_PROMPT}\n\n--- BİLDİRİM BİLGİLERİ ---\n${instructionText}` }
-          ]
-        }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.2
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+    const requestPayload = JSON.stringify({
+      model: "claude-haiku-4-5",
+      max_tokens: 2048,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: base64
+            }
+          },
+          {
+            type: "text",
+            text: `${SYSTEM_PROMPT}\n\n--- BİLDİRİM BİLGİLERİ ---\n${instructionText}`
+          }
         ]
-      });
+      }]
+    });
 
-      // 1. Yöntem: x-goog-api-key Header ile deneme (Yeni AQ. formatlı anahtarlar için)
-      try {
-        const urlHeader = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent`;
-        const res = await fetch(urlHeader, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey
-          },
-          body: requestPayload
-        });
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: requestPayload
+    });
 
-        if (res.ok) {
-          response = res;
-          break;
-        } else {
-          const errBody = await res.json().catch(()=>({}));
-          const errMsg = errBody?.error?.message || `HTTP ${res.status}`;
-          if (res.status === 429 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate")) {
-            rateLimited = true;
-            lastErrorDetail = "Google API yoğunluk kısıtlamasına takıldı (Ücretsiz kotada çok hızlı istek yapıldı). Lütfen 20-30 saniye bekleyip tekrar 'Analiz Et' butonuna basın.";
-            break;
-          }
-          if (!lastErrorDetail || res.status !== 404) {
-            lastErrorDetail = errMsg;
-          }
-        }
-      } catch(e) { lastErrorDetail = e.message; }
-
-      if (response) break;
-
-      // 2. Yöntem: URL ?key= parametresi ile deneme (Klasik anahtarlar için)
-      try {
-        const urlQuery = `https://generativelanguage.googleapis.com/v1beta/${cleanPath}:generateContent?key=${apiKey}`;
-        const res = await fetch(urlQuery, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: requestPayload
-        });
-
-        if (res.ok) {
-          response = res;
-          break;
-        } else {
-          const errBody = await res.json().catch(()=>({}));
-          const errMsg = errBody?.error?.message || `HTTP ${res.status}`;
-          if (res.status === 429 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate")) {
-            rateLimited = true;
-            lastErrorDetail = "Google API yoğunluk kısıtlamasına takıldı (Ücretsiz kotada çok hızlı istek yapıldı). Lütfen 20-30 saniye bekleyip tekrar 'Analiz Et' butonuna basın.";
-            break;
-          }
-          if (!lastErrorDetail || res.status !== 404) {
-            lastErrorDetail = errMsg;
-          }
-        }
-      } catch(e) { lastErrorDetail = e.message; }
-
-      if (response || rateLimited) break;
+    if(!res.ok){
+      const errBody = await res.json().catch(()=>({}));
+      const errMsg = errBody?.error?.message || `HTTP ${res.status}`;
+      if(res.status === 401){
+        showAddError('API anahtarı geçersiz. Sağ üstten "API Anahtarı" bölümüne doğru sk-ant-... anahtarını girin.');
+        openApiKeyPanel();
+        btn.disabled = false; btn.textContent = 'Analiz Et';
+        return;
+      }
+      if(res.status === 429){
+        showAddError('İstek limiti aşıldı. 30 saniye bekleyip tekrar deneyin.');
+        btn.disabled = false; btn.textContent = 'Analiz Et';
+        return;
+      }
+      throw new Error(errMsg);
     }
 
-    if (!response) {
-      showAddError('API isteği başarısız oldu (' + lastErrorDetail + ').');
-      btn.disabled = false; btn.textContent = 'Analiz Et';
-      return;
-    }
+    const data = await res.json();
+    rawText = (data.content || []).map(c => c.text || '').join('\n').trim();
+    rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    if(!rawText) throw new Error('Model yanıt metni boş kaldı.');
+
   }catch(err){
-    console.error('Ağ isteği hatası:', err);
-    showAddError('Sunucuya bağlanılamadı (' + (err.message || 'ağ hatası') + '). İnternet bağlantınızı kontrol edip tekrar deneyin.');
-    btn.disabled = false; btn.textContent = 'Analiz Et';
-    return;
-  }
-
-  if(!response.ok){
-    let detail = response.status;
-    try{ const errBody = await response.json(); if(errBody?.error?.message) detail += ': ' + errBody.error.message; }catch(e){}
-    console.error('API hata yanıtı:', detail);
-    if(response.status === 400 && detail.includes("API key not valid")){
-      showAddError('API anahtarı geçersiz görünüyor. Sağ üstten "API Anahtarı" ile kontrol edip güncelleyin.');
-      openApiKeyPanel();
-    }else{
-      showAddError('API isteği başarısız oldu (' + detail + '). Tekrar deneyin.');
-    }
+    console.error('API hatası:', err);
+    showAddError('API isteği başarısız oldu (' + (err.message || 'ağ hatası') + '). İnternet bağlantınızı kontrol edip tekrar deneyin.');
     btn.disabled = false; btn.textContent = 'Analiz Et';
     return;
   }
 
   let parsed;
   try{
-    const data = await response.json();
-    let rawText = "";
-    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
-      rawText = data.candidates[0].content.parts.map(p => p.text || '').join('\n').trim();
-    }
-    
-    if(rawText){
-      rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-    }
-    
-    if(!rawText) {
-      const reason = data.candidates?.[0]?.finishReason || 'Bilinmiyor';
-      throw new Error(`Model yanıt metni boş kaldı (Neden: ${reason}).`);
-    }
-
     parsed = JSON.parse(rawText);
   }catch(err){
-    console.error('Yanıt işleme hatası:', err);
-    showAddError('Model yanıtı işlenemedi (' + (err.message || 'bilinmeyen hata') + '). Tekrar deneyin.');
+    console.error('Yanıt işleme hatası:', err, rawText);
+    showAddError('Model yanıtı işlenemedi. Tekrar deneyin.');
     btn.disabled = false; btn.textContent = 'Analiz Et';
     return;
   }
