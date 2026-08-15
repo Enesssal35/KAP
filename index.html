@@ -93,10 +93,11 @@
     font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.14em;
     color:var(--text-mute); text-transform:uppercase; margin:0 0 10px 4px;
   }
-  .ticker-list{ list-style:none; margin:0 0 22px; padding:0; }
+  .ticker-list{ list-style:none; margin:0 0 10px; padding:0; }
   .ticker-list li{ margin-bottom:2px; }
+  .ticker-item{ display:flex; align-items:center; gap:2px; }
   .ticker-btn{
-    width:100%; display:flex; justify-content:space-between; align-items:center;
+    flex:1; display:flex; justify-content:space-between; align-items:center;
     background:transparent; border:1px solid transparent; border-radius:3px;
     color:var(--text-soft); padding:7px 10px; font-family:var(--font-mono); font-size:12.5px;
     cursor:pointer; text-align:left;
@@ -105,6 +106,21 @@
   .ticker-btn.active{ background:var(--gold-soft); color:var(--gold); border-color:rgba(201,169,97,0.35); }
   .ticker-count{ color:var(--text-mute); font-size:11px; }
   .ticker-btn.active .ticker-count{ color:var(--gold); opacity:.8; }
+  .ticker-remove{
+    flex-shrink:0; background:transparent; border:none; color:var(--text-mute);
+    font-size:14px; cursor:pointer; padding:4px 6px; border-radius:3px; line-height:1;
+    opacity:0; transition:opacity .15s, color .15s;
+  }
+  .ticker-item:hover .ticker-remove{ opacity:1; }
+  .ticker-remove:hover{ color:var(--negative); }
+  .portfolio-add{
+    display:flex; gap:6px; margin-bottom:16px;
+  }
+  .portfolio-add input{
+    flex:1; min-width:0; font-family:var(--font-mono); font-size:12px;
+    text-transform:uppercase; padding:7px 8px;
+  }
+  .portfolio-add button{ padding:7px 10px; font-size:12px; flex-shrink:0; }
 
   /* ---------- Filter bar ---------- */
   .filter-bar{
@@ -271,6 +287,10 @@
   <aside class="sidebar">
     <div class="side-label">Portföy</div>
     <ul class="ticker-list" id="tickerList"></ul>
+    <div class="portfolio-add">
+      <input type="text" id="newTickerInput" placeholder="THYAO" maxlength="10" autocomplete="off">
+      <button class="btn btn-ghost" id="addTickerBtn" title="Hisse ekle">+</button>
+    </div>
   </aside>
 
   <main>
@@ -333,7 +353,20 @@
 </div>
 
 <script>
-const PORTFOLIO = ["EGEEN","FROTO","BRSAN","CLEBI","CCOLA","OTKAR","PGSUS","ISMEN","ANSGR","LOGO","LKMNH","ALKA","SODSN","ALTNY"];
+const DEFAULT_PORTFOLIO = ["EGEEN","FROTO","BRSAN","CLEBI","CCOLA","OTKAR","PGSUS","ISMEN","ANSGR","LOGO","LKMNH","ALKA","SODSN","ALTNY"];
+const LS_PORTFOLIO_KEY = 'kap_portfolio';
+
+function loadPortfolio(){
+  try{
+    const raw = localStorage.getItem(LS_PORTFOLIO_KEY);
+    return raw ? JSON.parse(raw) : [...DEFAULT_PORTFOLIO];
+  }catch(e){ return [...DEFAULT_PORTFOLIO]; }
+}
+function savePortfolio(arr){
+  try{ localStorage.setItem(LS_PORTFOLIO_KEY, JSON.stringify(arr)); }catch(e){}
+}
+
+let PORTFOLIO = loadPortfolio();
 
 let reports = [];
 let activeTicker = "TÜMÜ";
@@ -449,20 +482,29 @@ function renderSidebar(){
   const knownTickers = Array.from(new Set([...PORTFOLIO, ...Object.keys(counts)]));
   const currentActive = (activeTicker || 'TÜMÜ').trim().toUpperCase();
 
-  let html = `<li><button class="ticker-btn ${currentActive==='TÜMÜ'?'active':''}" data-t="TÜMÜ">
-    <span>Tümü</span><span class="ticker-count">${reports.length}</span></button></li>`;
+  let html = `<li><div class="ticker-item">
+    <button class="ticker-btn ${currentActive==='TÜMÜ'?'active':''}" data-t="TÜMÜ">
+      <span>Tümü</span><span class="ticker-count">${reports.length}</span>
+    </button>
+  </div></li>`;
   
   knownTickers.forEach(t=>{
     const upperT = t.trim().toUpperCase();
-    html += `<li><button class="ticker-btn ${currentActive===upperT?'active':''}" data-t="${upperT}">
-      <span>${upperT}</span><span class="ticker-count">${counts[upperT]||0}</span></button></li>`;
+    const inPortfolio = PORTFOLIO.includes(upperT);
+    html += `<li><div class="ticker-item">
+      <button class="ticker-btn ${currentActive===upperT?'active':''}" data-t="${upperT}">
+        <span>${upperT}</span><span class="ticker-count">${counts[upperT]||0}</span>
+      </button>
+      ${inPortfolio ? `<button class="ticker-remove" data-remove="${upperT}" title="Portföyden çıkar">×</button>` : ''}
+    </div></li>`;
   });
   
   el('tickerList').innerHTML = html;
+
+  // Ticker seçim
   el('tickerList').querySelectorAll('.ticker-btn').forEach(b=>{
     b.addEventListener('click', ()=>{ 
       activeTicker = (b.dataset.t || 'TÜMÜ').trim().toUpperCase(); 
-      // Sol menüden tıklanınca filtreleri sıfırla ki sonuçlar hemen görünsün
       el('filterType').value = '';
       el('filterSignal').value = '';
       el('searchInput').value = '';
@@ -471,9 +513,43 @@ function renderSidebar(){
     });
   });
 
+  // Hisse çıkar
+  el('tickerList').querySelectorAll('.ticker-remove').forEach(b=>{
+    b.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const t = b.dataset.remove;
+      if(!confirm(`"${t}" portföyden çıkarılsın mı?`)) return;
+      PORTFOLIO = PORTFOLIO.filter(x => x !== t);
+      savePortfolio(PORTFOLIO);
+      if(activeTicker === t){ activeTicker = 'TÜMÜ'; }
+      renderSidebar();
+      renderList();
+    });
+  });
+
   // datalist for add form
   el('tickerOptions').innerHTML = PORTFOLIO.map(t=>`<option value="${t}">`).join('');
 }
+
+// Hisse ekle
+el('addTickerBtn').addEventListener('click', ()=>{
+  const val = el('newTickerInput').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!val){ el('newTickerInput').focus(); return; }
+  if(PORTFOLIO.includes(val)){ 
+    el('newTickerInput').value = ''; 
+    el('newTickerInput').placeholder = 'Zaten var!';
+    setTimeout(()=>{ el('newTickerInput').placeholder = 'THYAO'; }, 1500);
+    return; 
+  }
+  PORTFOLIO.push(val);
+  savePortfolio(PORTFOLIO);
+  el('newTickerInput').value = '';
+  renderSidebar();
+});
+el('newTickerInput').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') el('addTickerBtn').click();
+  el('newTickerInput').value = el('newTickerInput').value.toUpperCase();
+});
 
 /* ---------------- filtering + list ---------------- */
 function getFiltered(){
