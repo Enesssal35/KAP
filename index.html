@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KAP Analiz Masası</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
     --bg: #0D1117;
@@ -769,20 +770,43 @@ renderApiKeyBanner();
 /* ---------------- PDF upload ---------------- */
 let selectedPdfFile = null;
 
-function fileToBase64(file){
-  return new Promise((resolve, reject)=>{
+// PDF.js worker ayarı
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+async function extractPdfText(file) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      try{
-        const result = reader.result;
-        const commaIdx = result.indexOf(',');
-        if(commaIdx === -1){ reject(new Error('PDF verisi okunamadı (beklenmeyen biçim).')); return; }
-        const base64 = result.slice(commaIdx + 1).replace(/\s+/g, '');
-        resolve(base64);
-      }catch(e){ reject(new Error('PDF verisi işlenemedi.')); }
+    reader.onload = async (e) => {
+      try {
+        // PDF.js hazır değilse bekle
+        if (typeof pdfjsLib === 'undefined') {
+          reject(new Error('PDF okuyucu yüklenemedi. Sayfayı yenileyip tekrar deneyin.'));
+          return;
+        }
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const typedArray = new Uint8Array(e.target.result);
+        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        let fullText = '';
+        const maxPages = Math.min(pdf.numPages, 60); // max 60 sayfa
+        for (let i = 1; i <= maxPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items.map(item => item.str).join(' ');
+          fullText += `\n--- Sayfa ${i} ---\n${pageText}`;
+        }
+        if (!fullText.trim() || fullText.trim().length < 50) {
+          reject(new Error('PDF içinden metin çıkarılamadı. Dosya taranmış (görüntü) bir PDF olabilir.'));
+          return;
+        }
+        resolve(fullText.trim());
+      } catch(err) {
+        reject(new Error('PDF işlenemedi: ' + (err.message || err)));
+      }
     };
     reader.onerror = () => reject(new Error('Dosya okunamadı'));
-    reader.readAsDataURL(file);
+    reader.readAsArrayBuffer(file);
   });
 }
 
@@ -798,7 +822,7 @@ el('pdfInput').addEventListener('change', (e)=>{
     e.target.value = '';
     return;
   }
-  const MAX_MB = 10;
+  const MAX_MB = 30;
   if(file.size > MAX_MB * 1024 * 1024){
     selectedPdfFile = null;
     status.style.color = 'var(--negative)';
@@ -808,7 +832,7 @@ el('pdfInput').addEventListener('change', (e)=>{
   }
   selectedPdfFile = file;
   status.style.color = 'var(--positive)';
-  status.textContent = `"${file.name}" seçildi (${(file.size/1024).toFixed(0)} KB) — analiz sırasında PDF doğrudan Gemini modeline okutulacak.`;
+  status.textContent = `"${file.name}" seçildi (${(file.size/1024).toFixed(0)} KB) — analiz için metin çıkarılacak.`;
 });
 
 const SYSTEM_PROMPT = `Sen kıdemli bir değer yatırımcısı analistisin. BIST (Borsa İstanbul) hisselerine ait KAP (Kamuyu Aydınlatma Platformu) bildirimlerini değerlendiriyorsun.
@@ -860,44 +884,41 @@ el('analyzeBtn').addEventListener('click', async ()=>{
 
   const btn = el('analyzeBtn');
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner"></span>Analiz ediliyor...`;
+  btn.innerHTML = `<span class="spinner"></span>PDF okunuyor...`;
 
-  const instructionText = `Hisse: ${ticker}\nBildirim Türü: ${reportType}\nDönem: ${period || 'Belirtilmemiş'}\n\nEkteki PDF, bu hisseye ait KAP bildirimidir. PDF'i oku ve analiz et.`;
-
-  let base64;
+  let pdfText;
   try{
-    base64 = await fileToBase64(selectedPdfFile);
-    if(!base64 || base64.length < 100){
-      throw new Error('PDF verisi boş veya çok kısa göründü.');
+    pdfText = await extractPdfText(selectedPdfFile);
+    if(!pdfText || pdfText.length < 50){
+      throw new Error('PDF içinden metin çıkarılamadı.');
     }
   }catch(err){
     console.error('PDF okuma hatası:', err);
-    showAddError('PDF dosyası okunamadı (' + (err.message || 'bilinmeyen hata') + '). Dosyayı tekrar seçip deneyin.');
+    showAddError('PDF dosyası okunamadı: ' + (err.message || 'bilinmeyen hata'));
     btn.disabled = false; btn.textContent = 'Analiz Et';
     return;
   }
 
+  btn.innerHTML = `<span class="spinner"></span>Analiz ediliyor...`;
+
+  // Çok uzun metni kırp (Claude max ~100k token, güvenli sınır ~80k karakter)
+  const MAX_CHARS = 80000;
+  const truncated = pdfText.length > MAX_CHARS;
+  if(truncated) pdfText = pdfText.slice(0, MAX_CHARS) + '\n[...metin çok uzun olduğu için kısaltıldı]';
+
+  const instructionText = `Hisse: ${ticker}\nBildirim Türü: ${reportType}\nDönem: ${period || 'Belirtilmemiş'}\n\nAşağıdaki metin, bu hisseye ait KAP bildiriminin tam içeriğidir:\n\n${pdfText}`;
+
   let rawText = '';
   try{
     const requestPayload = JSON.stringify({
-      model: "claude-sonnet-4-5",
+      model: "claude-haiku-4-5",
       max_tokens: 2048,
       messages: [{
         role: "user",
-        content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: base64
-            }
-          },
-          {
-            type: "text",
-            text: `${SYSTEM_PROMPT}\n\n--- BİLDİRİM BİLGİLERİ ---\n${instructionText}`
-          }
-        ]
+        content: [{
+          type: "text",
+          text: `${SYSTEM_PROMPT}\n\n--- BİLDİRİM BİLGİLERİ ---\n${instructionText}`
+        }]
       }]
     });
 
